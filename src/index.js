@@ -1,9 +1,27 @@
 const P = require("parsimmon")
 
 const prettify = (parsers, name, f) => {
+  let proceed = {}
   return function (...args) {
     const original = f.call(this, ...args)
-    return original.node(name)
+    
+    return P((input, i) => {
+      const result = original.node(name)._(input, i)
+      if(result.status || proceed[i]) {
+        result.value = {
+          status: true,
+          ...result.value
+        }
+        return result
+      }
+      proceed[i] = true
+      const failed = P.makeSuccess(i, {
+        name: name,
+        status: false
+      })
+      failed.name = name
+      return failed
+    })
   }
 }
 
@@ -19,10 +37,15 @@ const _logger = (x, indentLevel) => {
   if (x === undefined)
     return
   if (x instanceof Array)
-    return x.map(v => _logger(v, indentLevel)).join("\n")
+    return x.map(v => _logger(v, indentLevel)).filter(x => x).join("\n")
   if (typeof x.value !== "object")
-    return "  ".repeat(indentLevel + 1) + x.value  
-  return ("  ".repeat(indentLevel) + "+ Ok(" + x.name + ") " + "\n" + _logger(x.value, indentLevel + 1))
+    if (x.value)
+      return "  ".repeat(indentLevel + 1) + x.value
+    else return
+  const name = (x.value instanceof Array) ? x.name : x.value.name  
+  if ((x.value.status || x.value instanceof Array))
+    return ["  ".repeat(indentLevel) + "+ Ok(" + name + ") ", _logger(x.value, indentLevel + 1)].join("\n")
+  return ("  ".repeat(indentLevel) + "- Fail(" + x.value.name + ") ")  
 }
 
 const logger = (ast) => {
